@@ -8,6 +8,35 @@ from langchain.chains.summarize import load_summarize_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.llms import Ollama
 import tiktoken
+from langchain.prompts import PromptTemplate
+
+map_prompt = PromptTemplate.from_template(
+    """
+    You are given a portion of a document. Summarize the key points and main ideas from this text using clear, concise paragraphs. Focus on 
+    capturing the core concepts and key discussions without adding personal opinions. Break down the content into bullet points where necessary, 
+    ensuring you cover important details. Use simple language while maintaining the original meaning.
+
+    "{text}"
+
+    CONCISE SUMMARY:
+    """
+)
+
+combine_prompt = PromptTemplate.from_template(
+    """
+    You are given a set of summarized texts. Combine these summaries into a comprehensive overview by synthesizing the main points. 
+    Organize the ideas logically, grouping related points together. Use paragraphs to elaborate on overarching themes, followed by 
+    concise bullet points to highlight the most critical points. Ensure clarity and flow, while avoiding repetition. The final summary 
+    should offer a clear understanding of the entire text.
+
+    "{text}"
+
+    CONCISE SUMMARY:
+    """
+)
+
+
+
 
 # %%
 def get_youtube_description(url: str):
@@ -67,7 +96,13 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
         base_url="http://localhost:11434",
         temperature=temperature,
     )
-    chain = load_summarize_chain(llm, chain_type="map_reduce")
+    chain = load_summarize_chain(llm, 
+    chain_type="map_reduce", 
+    map_prompt = map_prompt, 
+    combine_prompt=combine_prompt,
+    # these variables are the default values and can be modified/omitted
+    combine_document_variable_name="text",
+    map_reduce_document_variable_name="text",)
     output = chain.invoke(split_docs)
     return output['output_text']
 
