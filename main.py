@@ -1,14 +1,14 @@
-# %%
+import re
+
+import gradio as gr
 import pytube
 import requests
-import re
-import gradio as gr
-from langchain_community.document_loaders import YoutubeLoader
-from langchain.chains.summarize import load_summarize_chain
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.llms import Ollama
 import tiktoken
+from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import YoutubeLoader
+from langchain_community.llms import Ollama
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 languages = {
@@ -218,9 +218,9 @@ languages = {
     "Standard Malay": "zsm_Latn",
     "Zulu": "zul_Latn"
 }
-target_lang_code = "eng"
 
-
+target_lang_code = "eng_Latn"
+summary_type = "long"
 
 map_prompt = PromptTemplate.from_template(
     """
@@ -319,11 +319,11 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
     print(output['output_text'])
     return output['output_text']
 
-def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int, overlap_sizee: int):
+def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
     tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
     model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
 
-    article = f"{get_transcription_summary(urll,temperaturee,chunk_sizee,overlap_sizee)}"
+    article = f"{get_transcription_summary(urll,temperaturee,chunk_sizee, 0)}"
     inputs = tokenizer(article, return_tensors="pt")
 
     translated_tokens = model.generate(
@@ -337,71 +337,64 @@ def set_target_language(target_lang):
     global target_lang_code
     target_lang_code = languages[target_lang]
 
+def change_summary_type(type):
+    global summary_type
+    summary_type = type
 
-# # %%
-# try:
-#     demo.close()
-# except:
-#     pass
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    gr.Markdown("""# YouTube Summarizer with Llama 3 """)
 
-
-with gr.Blocks() as demo:
-    gr.Markdown("""# YouTube Summarizer with Llama 3
-                """)
     with gr.Row(equal_height=True) as r0:
         with gr.Column(scale=4) as r0c1:
             url = gr.Textbox(label='YouTube URL', value="https://youtu.be/bvPDQ4-0LAQ")
         with gr.Column(scale=1) as r0c2:
-            bttn_info_get = gr.Button('Get Info', variant='primary')
             bttn_clear = gr.ClearButton(interactive=True, variant='stop')
-            
+
     with gr.Row(variant='panel') as r1:
         with gr.Column(scale=2) as r1c1:
             title = gr.Textbox(label='Title', lines=2, max_lines=10, show_copy_button=True)
         with gr.Column(scale=3, ) as r1c2:
             desc = gr.Textbox(label='Description', max_lines=10, autoscroll=False, show_copy_button=True)
-            bttn_info_get.click(fn=get_youtube_info,
-                                inputs=url,
-                                outputs=[title, desc],
-                                api_name="get_youtube_info")
 
-    with gr.Row(equal_height=True) as r2:        
-        with gr.Column() as r2c1:
-            bttn_trns_get = gr.Button("Get Transcription", variant='primary')
-            tkncount = gr.Number(label='Token Count (est)')
-        with gr.Column() as r2c3:
-            bttn_summ_get = gr.Button("Summarize", variant='primary')
-            with gr.Row():
-                with gr.Column(scale=1, min_width=100):
-                    temperature = gr.Number(label='Temperature', minimum=0.0, step=0.01, precision=-2)
-                with gr.Column(scale=1, min_width=100):
-                    chunk = gr.Number(label='Chunk Size', minimum=200, step=100, value=4000)
-                with gr.Column(scale=1, min_width=100):
-                    overlap = gr.Number(label='Overlap Size', minimum=0, step=10, value=0)
+    with gr.Row(equal_height=True) as r2:
+        bttn_info_get = gr.Button('Get Info', variant='primary')
+        bttn_info_get.click(
+            fn=get_youtube_info,
+            inputs=url,
+            outputs=[title, desc],
+            api_name="get_youtube_info")
+        bttn_trns_get = gr.Button("Get Transcription", variant='primary')
+        bttn_summ_get = gr.Button("Summarize", variant='primary')
+
+    with gr.Row(equal_height=True) as r3:
+        tkncount = gr.Number(label='Token Count (est)')
+        chunk = gr.Number(label='Chunk Size', minimum=200, step=100, value=4000)
+        summary_type_dropdown = gr.Dropdown(choices=["short", "long"], label='Summary Type', value=summary_type)
+        summary_type_dropdown.input(fn=change_summary_type, inputs=summary_type_dropdown)
         dropdown = gr.Dropdown(
             choices=list(languages.keys()),  # List of languages
             label="Select language",  # Label for the dropdown
+            value=list(languages.keys())[list(languages.values()).index(target_lang_code)]
         )
-        dropdown.change(set_target_language, inputs = dropdown)
-        with gr.Column() as r2c4:
-            bttn_translate_get = gr.Button("Translate",variant = 'primary')
+        dropdown.change(set_target_language, inputs=dropdown)
 
-    with gr.Row() as r3:
-        with gr.Column() as r3c1:
+    with gr.Row() as r4:
+        with gr.Column() as r4c1:
             trns_raw = gr.Textbox(label='Transcript', show_copy_button=True)
-        with gr.Column() as r3c2:
+        with gr.Column() as r4c2:
             trns_sum = gr.Textbox(label="Summary", show_copy_button=True)
-    
-    bttn_trns_get.click(fn=get_youtube_transcription,
-                            inputs=url,
-                            outputs=[trns_raw, tkncount]
-                            )
-    bttn_summ_get.click(fn=get_translation_and_summary,
-                                inputs=[url, temperature, chunk, overlap],
-                                outputs=trns_sum)
-    
-    bttn_clear.add([url, title, desc, trns_raw, trns_sum, tkncount])
 
+    bttn_trns_get.click(fn=get_youtube_transcription,
+                        inputs=url,
+                        outputs=[trns_raw, tkncount]
+                        )
+
+    temperature = gr.Number(value=0, visible=False)
+    bttn_summ_get.click(fn=get_translation_and_summary,
+                        inputs=[url, temperature, chunk],
+                        outputs=trns_sum)
+
+    bttn_clear.add([url, title, desc, trns_raw, trns_sum, tkncount])
 
 if __name__ == "__main__":
     demo.launch(share=True)
