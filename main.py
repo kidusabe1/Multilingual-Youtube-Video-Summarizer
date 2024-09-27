@@ -11,6 +11,8 @@ from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.llms import Ollama
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
+target_lang_code = "eng"
+
 languages = {
     "Acehnese (Arabic script)": "ace_Arab",
     "Acehnese (Latin script)": "ace_Latn",
@@ -222,25 +224,48 @@ languages = {
 target_lang_code = "eng_Latn"
 summary_type = "long"
 
-map_prompt = PromptTemplate.from_template(
+map_prompt_long = PromptTemplate.from_template(
     """
     You are given a portion of a document. Summarize the key points and main ideas from this text using clear, concise paragraphs. Focus on 
     capturing the core concepts and key discussions without adding personal opinions. Break down the content into bullet points where necessary, 
     ensuring you cover important details. Use simple language while maintaining the original meaning.
 
     "{text}"
-
+    
     CONCISE SUMMARY:
     """
 )
 
-combine_prompt = PromptTemplate.from_template(
+map_prompt_short = PromptTemplate.from_template(
+    """
+    You are summarizing a section of a document into a short and concise paragraph. Focus on the key points and most important information,
+     and summarize the content in 2–3 sentences. Ensure the summary is clear, cohesive, and does not use lists or bullet points.
+
+    Summarize the following text in a few brief sentences:
+    "{text}"
+
+    CONCISE SUMMARY:
+    """
+)
+combine_prompt_long = PromptTemplate.from_template(
     """
     You are given a set of summarized texts. Combine these summaries into a comprehensive overview by synthesizing the main points. 
     Organize the ideas logically, grouping related points together. Use paragraphs to elaborate on overarching themes, followed by 
     concise bullet points to highlight the most critical points. Ensure clarity and flow, while avoiding repetition. The final summary 
     should offer a clear understanding of the entire text.
 
+    "{text}"
+
+    CONCISE SUMMARY:
+    """
+)
+combine_prompt_short = PromptTemplate.from_template(
+    """
+    You have multiple short paragraph summaries of different sections of a document. Your task is to merge them into a single,
+     brief paragraph that captures the core message of the entire document. Focus on the key points, and ensure the summary flows
+      naturally as one cohesive paragraph without using lists or bullet points.
+
+    Combine the following summaries into a single short paragraph:
     "{text}"
 
     CONCISE SUMMARY:
@@ -308,9 +333,15 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
         base_url="http://localhost:11434",
         temperature=temperature,
     )
+    if summary_type == "long":
+        map_prompt = map_prompt_long
+        combine_prompt = combine_prompt_long
+    else:
+        map_prompt = map_prompt_short
+        combine_prompt = combine_prompt_short
     chain = load_summarize_chain(llm, 
-    chain_type="map_reduce", 
-    map_prompt = map_prompt, 
+    chain_type="map_reduce",
+    map_prompt = map_prompt,
     combine_prompt=combine_prompt,
     # these variables are the default values and can be modified/omitted
     combine_document_variable_name="text",
@@ -331,6 +362,7 @@ def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int
     )
 
     result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+    print(result)
     return result
 
 def set_target_language(target_lang):
@@ -340,6 +372,8 @@ def set_target_language(target_lang):
 def change_summary_type(type):
     global summary_type
     summary_type = type
+
+
 
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
     gr.Markdown("""# YouTube Summarizer with Llama 3 """)
