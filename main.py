@@ -11,7 +11,7 @@ from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.llms import Ollama
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-target_lang_code = "eng"
+
 
 languages = {
     "Acehnese (Arabic script)": "ace_Arab",
@@ -220,7 +220,10 @@ languages = {
     "Standard Malay": "zsm_Latn",
     "Zulu": "zul_Latn"
 }
+# global variables
 
+target_lang_code = "eng"
+overlap = 0
 target_lang_code = "eng_Latn"
 summary_type = "long"
 
@@ -319,26 +322,33 @@ def get_text_splitter(chunk_size: int, overlap_size: int):
     return RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=chunk_size, chunk_overlap=overlap_size)
 
 def get_youtube_transcription(url: str):
+    global overlap
     text = wrap_docs_to_string(get_youtube_transcript_loader_langchain(url))
     enc = tiktoken.encoding_for_model("gpt-4")
     count = len(enc.encode(text))
+    overlap = 0.1 * count
     return text, count
 
 def get_transcription_summary(url: str, temperature: float, chunk_size: int, overlap_size: int):
     docs = get_youtube_transcript_loader_langchain(url)
-    text_splitter = get_text_splitter(chunk_size=chunk_size, overlap_size=overlap_size)
+    text_splitter = get_text_splitter(chunk_size=chunk_size, overlap_size=overlap)
     split_docs = text_splitter.split_documents(docs)
-    llm = Ollama(
-        model="llama3",
-        base_url="http://localhost:11434",
-        temperature=temperature,
-    )
+    llama_model = "llama3"
     if summary_type == "long":
         map_prompt = map_prompt_long
         combine_prompt = combine_prompt_long
-    else:
+        llama_model = "llama3"
+    elif summary_type == "short":
         map_prompt = map_prompt_short
         combine_prompt = combine_prompt_short
+        llama_model = "llama3.2"
+
+    llm = Ollama(
+        model=llama_model,
+        base_url="http://localhost:11434",
+        temperature=temperature,
+    )
+
     chain = load_summarize_chain(llm, 
     chain_type="map_reduce",
     map_prompt = map_prompt,
@@ -350,6 +360,24 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
     print(output['output_text'])
     return output['output_text']
 
+
+def format_text(text):
+    # Split the text by '**', which indicates a new line or subtitle
+    lines = text.split('**')
+
+    formatted_lines = []
+    for line in lines:
+        stripped_line = line.strip()
+
+        # Check if the line starts with bullet points or numbers
+        if stripped_line.startswith(('-', '*', '1.', '2.', '3.')):
+            formatted_lines.append(stripped_line)
+        elif stripped_line:  # For subtitles or regular text
+            formatted_lines.append("\n" + stripped_line + "\n")
+
+    return '\n'.join(formatted_lines)
+
+
 def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
     tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
     model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
@@ -358,10 +386,11 @@ def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int
     inputs = tokenizer(article, return_tensors="pt")
 
     translated_tokens = model.generate(
-        **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1]
+        **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1], max_length = 5000
     )
 
     result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+    result = format_text(result)
     print(result)
     return result
 
@@ -372,6 +401,9 @@ def set_target_language(target_lang):
 def change_summary_type(type):
     global summary_type
     summary_type = type
+
+
+
 
 
 
