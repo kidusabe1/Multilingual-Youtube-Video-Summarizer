@@ -4,6 +4,7 @@ import gradio as gr
 import pytube
 import requests
 import tiktoken
+import time
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -330,6 +331,7 @@ def get_youtube_transcription(url: str):
     return text, count
 
 def get_transcription_summary(url: str, temperature: float, chunk_size: int, overlap_size: int):
+    start_time = time.time()
     docs = get_youtube_transcript_loader_langchain(url)
     text_splitter = get_text_splitter(chunk_size=chunk_size, overlap_size=overlap)
     split_docs = text_splitter.split_documents(docs)
@@ -358,6 +360,7 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
     map_reduce_document_variable_name="text",)
     output = chain.invoke(split_docs)
     print(output['output_text'])
+    print("Summary takes: --- %s seconds ---" % (time.time() - start_time))
     return output['output_text']
 
 
@@ -379,6 +382,7 @@ def format_text(text):
 
 
 def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
+    start_time = time.time()
     tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
     model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
 
@@ -392,6 +396,7 @@ def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int
     result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
     result = format_text(result)
     print(result)
+    print("translation time takes:---> %s seconds ---" % (time.time() - start_time))
     return result
 
 def set_target_language(target_lang):
