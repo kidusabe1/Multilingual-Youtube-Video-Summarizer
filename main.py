@@ -5,14 +5,13 @@ import pytube
 import requests
 import tiktoken
 import time
+import torch
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.llms import Ollama
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-
 
 languages = {
     "Acehnese (Arabic script)": "ace_Arab",
@@ -223,7 +222,6 @@ languages = {
 }
 # global variables
 
-target_lang_code = "eng"
 overlap = 0
 target_lang_code = "eng_Latn"
 summary_type = "long"
@@ -235,7 +233,7 @@ map_prompt_long = PromptTemplate.from_template(
     ensuring you cover important details. Use simple language while maintaining the original meaning.
 
     "{text}"
-    
+
     CONCISE SUMMARY:
     """
 )
@@ -256,7 +254,7 @@ combine_prompt_long = PromptTemplate.from_template(
     You are given a set of summarized texts. Combine these summaries into a comprehensive overview by synthesizing the main points. 
     Organize the ideas logically, grouping related points together. Use paragraphs to elaborate on overarching themes, followed by 
     concise bullet points to highlight the most critical points. Ensure clarity and flow, while avoiding repetition. The final summary 
-    should offer a clear understanding of the entire text.
+    should offer a clear understanding of the entire text. make sure the final summary is under 1000 words.
 
     "{text}"
 
@@ -275,8 +273,6 @@ combine_prompt_short = PromptTemplate.from_template(
     CONCISE SUMMARY:
     """
 )
-
-
 
 
 # %%
@@ -300,6 +296,7 @@ def get_youtube_description(url: str):
             count += 1
     return desc
 
+
 def get_youtube_info(url: str):
     yt = pytube.YouTube(url)
     title = yt.title
@@ -310,17 +307,21 @@ def get_youtube_info(url: str):
         desc = "None"
     return title, desc
 
+
 def get_youtube_transcript_loader_langchain(url: str):
     loader = YoutubeLoader.from_youtube_url(
         url, add_video_info=True
     )
     return loader.load()
 
+
 def wrap_docs_to_string(docs):
     return " ".join([doc.page_content for doc in docs]).strip()
 
+
 def get_text_splitter(chunk_size: int, overlap_size: int):
     return RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=chunk_size, chunk_overlap=overlap_size)
+
 
 def get_youtube_transcription(url: str):
     global overlap
@@ -329,6 +330,7 @@ def get_youtube_transcription(url: str):
     count = len(enc.encode(text))
     overlap = 0.1 * count
     return text, count
+
 
 def get_transcription_summary(url: str, temperature: float, chunk_size: int, overlap_size: int):
     start_time = time.time()
@@ -351,13 +353,13 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
         temperature=temperature,
     )
 
-    chain = load_summarize_chain(llm, 
-    chain_type="map_reduce",
-    map_prompt = map_prompt,
-    combine_prompt=combine_prompt,
-    # these variables are the default values and can be modified/omitted
-    combine_document_variable_name="text",
-    map_reduce_document_variable_name="text",)
+    chain = load_summarize_chain(llm,
+                                 chain_type="map_reduce",
+                                 map_prompt=map_prompt,
+                                 combine_prompt=combine_prompt,
+                                 # these variables are the default values and can be modified/omitted
+                                 combine_document_variable_name="text",
+                                 map_reduce_document_variable_name="text", )
     output = chain.invoke(split_docs)
     print(output['output_text'])
     print("Summary takes: --- %s seconds ---" % (time.time() - start_time))
@@ -371,7 +373,8 @@ def format_text(text):
     formatted_lines = []
     for line in lines:
         stripped_line = line.strip()
-
+        if "***" in stripped_line:
+            break
         # Check if the line starts with bullet points or numbers
         if stripped_line.startswith(('-', '*', '1.', '2.', '3.')):
             formatted_lines.append(stripped_line)
@@ -382,34 +385,33 @@ def format_text(text):
 
 
 def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
+    article = f"{get_transcription_summary(urll, temperaturee, chunk_sizee, 0)}"
     start_time = time.time()
-    tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", src_lang=target_lang_code,
+                                              device=device)
     model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-
-    article = f"{get_transcription_summary(urll,temperaturee,chunk_sizee, 0)}"
     inputs = tokenizer(article, return_tensors="pt")
 
     translated_tokens = model.generate(
-        **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1], max_length = 5000
-    )
+        **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1], max_length=1024)
 
     result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+    print(f"before: {result}")
     result = format_text(result)
     print(result)
     print("translation time takes:---> %s seconds ---" % (time.time() - start_time))
     return result
 
+
 def set_target_language(target_lang):
     global target_lang_code
     target_lang_code = languages[target_lang]
 
+
 def change_summary_type(type):
     global summary_type
     summary_type = type
-
-
-
-
 
 
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
