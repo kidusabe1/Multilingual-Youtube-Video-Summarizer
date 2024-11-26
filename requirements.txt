@@ -269,5 +269,5 @@ yarl==1.9.4
 youtube-transcript-api==0.6.2
 zipp==3.18.1
 
-deep-translator~=1.11.4
+deep_translator~=1.11.4
 transformers~=4.46.2

@@ -1,10 +1,10 @@
 import re
+import time
 
 import gradio as gr
 import pytube
 import requests
 import tiktoken
-import time
 import torch
 from deep_translator import GoogleTranslator
 from langchain.chains.summarize import load_summarize_chain
@@ -12,8 +12,8 @@ from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.llms import Ollama
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, NllbTokenizerFast
-import os
+from transformers import AutoModelForSeq2SeqLM, NllbTokenizerFast
+
 languages = {
     "Acehnese (Arabic script)": "ace_Arab",
     "Acehnese (Latin script)": "ace_Latn",
@@ -288,14 +288,14 @@ language_google = {
     'Zulu': 'zulu'
 }
 
-
 # global variables
-
 overlap = 0
 target_language = ""
 target_lang_code = "eng_Latn"
 summary_type = "long"
-translation_engine = "Google Translator"
+translation_engine = "Facebook Translator"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("Running on " + device)
 
 map_prompt_long = PromptTemplate.from_template(
     """
@@ -419,7 +419,7 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
     llm = Ollama(
         model=llama_model,
         base_url="http://localhost:11434",
-        temperature=temperature,
+        temperature=temperature
     )
 
     chain = load_summarize_chain(llm,
@@ -428,7 +428,7 @@ def get_transcription_summary(url: str, temperature: float, chunk_size: int, ove
                                  combine_prompt=combine_prompt,
                                  # these variables are the default values and can be modified/omitted
                                  combine_document_variable_name="text",
-                                 map_reduce_document_variable_name="text", )
+                                 map_reduce_document_variable_name="text")
     output = chain.invoke(split_docs)
     print(output['output_text'])
     print("Summary takes: --- %s seconds ---" % (time.time() - start_time))
@@ -455,14 +455,17 @@ def format_text(text):
 
 def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
     article = f"{get_transcription_summary(urll, temperaturee, chunk_sizee, 0)}"
-    if translation_engine == 'Google Translator':
+    if target_lang_code == "eng_Latn":
+        return article
+
+    print(translation_engine)
+
+    if translation_engine == 'Facebook Translator':
         start_time = time.time()
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        # tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", src_lang="eng_Latn",
-        #                                           device=device)
+        # tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", src_lang="eng_Latn", device=device)
         tokenizer = NllbTokenizerFast.from_pretrained(
-        "facebook/nllb-200-distilled-600M", src_lang="eng_Latn")
-        model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+            "facebook/nllb-200-3.3B", src_lang="eng_Latn", device=device)
+        model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-3.3B")
         inputs = tokenizer(article, return_tensors="pt")
 
         translated_tokens = model.generate(
@@ -494,6 +497,7 @@ def change_summary_type(type):
     global summary_type
     summary_type = type
 
+
 def change_engine(engine):
     global translation_engine
     translation_engine = engine
@@ -504,7 +508,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
     with gr.Row(equal_height=True) as r0:
         with gr.Column(scale=4) as r0c1:
-            url = gr.Textbox(label='YouTube URL', value="Enter a youtube video link here")
+            url = gr.Textbox(label='YouTube URL', placeholder="Enter a youtube video link here")
         with gr.Column(scale=1) as r0c2:
             bttn_clear = gr.ClearButton(interactive=True, variant='stop')
 
@@ -536,11 +540,12 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         )
         dropdown.change(set_target_language, inputs=dropdown)
         select_engine_dropdown = gr.Dropdown(
-            choices = ['Google Translator','Facebook Translator'],
-            label = 'Select Engine',
-            info = "Use Facebook Engine for a low resourced language like Odia"
+            choices=['Google Translator', 'Facebook Translator'],
+            label='Select Engine',
+            info="Use Facebook Engine for a low resourced language like Odia",
+            value="Facebook Translator"
         )
-        select_engine_dropdown.input(fn=None, inputs =select_engine_dropdown)
+        select_engine_dropdown.input(fn=change_engine, inputs=select_engine_dropdown)
     with gr.Row() as r4:
         with gr.Column() as r4c1:
             trns_raw = gr.Textbox(label='Transcript', show_copy_button=True)
