@@ -6,13 +6,14 @@ import requests
 import tiktoken
 import time
 import torch
+from deep_translator import GoogleTranslator
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.llms import Ollama
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, NllbTokenizerFast
+import os
 languages = {
     "Acehnese (Arabic script)": "ace_Arab",
     "Acehnese (Latin script)": "ace_Latn",
@@ -220,17 +221,86 @@ languages = {
     "Standard Malay": "zsm_Latn",
     "Zulu": "zul_Latn"
 }
+
+language_google = {
+    'Akan': 'akan',
+    'Amharic': 'amharic',
+    'Modern Standard Arabic': 'arabic',
+    'Bengali': 'bengali',
+    'Bhojpuri': 'bhojpuri',
+    'Bulgarian': 'bulgarian',
+    'Catalan': 'catalan',
+    'Chinese (Simplified)': 'chinese',
+    'Croatian': 'croatian',
+    'Czech': 'czech',
+    'Danish': 'danish',
+    'Dutch': 'dutch',
+    'English': 'english',
+    'Estonian': 'estonian',
+    'Finnish': 'finnish',
+    'French': 'french',
+    'German': 'german',
+    'Greek': 'greek',
+    'Gujarati': 'gujarati',
+    'Hausa': 'hausa',
+    'Hebrew': 'hebrew',
+    'Hindi': 'hindi',
+    'Hungarian': 'hungarian',
+    'Icelandic': 'icelandic',
+    'Igbo': 'igbo',
+    'Indonesian': 'indonesian',
+    'Italian': 'italian',
+    'Japanese': 'japanese',
+    'Kannada': 'kannada',
+    'Kinyarwanda': 'kinyarwanda',
+    'Korean': 'korean',
+    'Standard Latvian': 'latvian',
+    'Lithuanian': 'lithuanian',
+    'Standard Malay': 'malay',
+    'Malayalam': 'malayalam',
+    'Marathi': 'marathi',
+    'Nepali': 'nepali',
+    'Norwegian Nynorsk': 'norwegian',
+    'Odia': 'odia',
+    'Western Persian': 'persian',
+    'Polish': 'polish',
+    'Portuguese': 'portuguese',
+    'Romanian': 'romanian',
+    'Russian': 'russian',
+    'Slovak': 'slovak',
+    'Slovenian': 'slovenian',
+    'Somali': 'somali',
+    'Spanish': 'spanish',
+    'Swahili': 'swahili',
+    'Swedish': 'swedish',
+    'Tamil': 'tamil',
+    'Telugu': 'telugu',
+    'Thai': 'thai',
+    'Tigrinya': 'tigrinya',
+    'Turkish': 'turkish',
+    'Ukrainian': 'ukrainian',
+    'Urdu': 'urdu',
+    'Northern Uzbek': 'uzbek',
+    'Vietnamese': 'vietnamese',
+    'Welsh': 'welsh',
+    'Xhosa': 'xhosa',
+    'Yoruba': 'yoruba',
+    'Zulu': 'zulu'
+}
+
+
 # global variables
 
 overlap = 0
+target_language = ""
 target_lang_code = "eng_Latn"
 summary_type = "long"
+translation_engine = "Google Translator"
 
 map_prompt_long = PromptTemplate.from_template(
     """
     You are given a portion of a document. Summarize the key points and main ideas from this text using clear, concise paragraphs. Focus on 
-    capturing the core concepts and key discussions without adding personal opinions. Break down the content into bullet points where necessary, 
-    ensuring you cover important details. Use simple language while maintaining the original meaning.
+    capturing the core concepts and key discussions without adding personal opinions. Use simple language while maintaining the original meaning.
 
     "{text}"
 
@@ -252,9 +322,8 @@ map_prompt_short = PromptTemplate.from_template(
 combine_prompt_long = PromptTemplate.from_template(
     """
     You are given a set of summarized texts. Combine these summaries into a comprehensive overview by synthesizing the main points. 
-    Organize the ideas logically, grouping related points together. Use paragraphs to elaborate on overarching themes, followed by 
-    concise bullet points to highlight the most critical points. Ensure clarity and flow, while avoiding repetition. The final summary 
-    should offer a clear understanding of the entire text. make sure the final summary is under 1000 words.
+    Organize the ideas logically, grouping related points together. Use paragraphs to elaborate on important points, followed by 
+    concise bullet points to highlight the most critical points. Avoid repetition. make sure the final summary is under 1000 words.
 
     "{text}"
 
@@ -386,26 +455,38 @@ def format_text(text):
 
 def get_translation_and_summary(urll: str, temperaturee: float, chunk_sizee: int):
     article = f"{get_transcription_summary(urll, temperaturee, chunk_sizee, 0)}"
-    start_time = time.time()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", src_lang=target_lang_code,
-                                              device=device)
-    model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-    inputs = tokenizer(article, return_tensors="pt")
+    if translation_engine == 'Google Translator':
+        start_time = time.time()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", src_lang="eng_Latn",
+        #                                           device=device)
+        tokenizer = NllbTokenizerFast.from_pretrained(
+        "facebook/nllb-200-distilled-600M", src_lang="eng_Latn")
+        model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+        inputs = tokenizer(article, return_tensors="pt")
 
-    translated_tokens = model.generate(
-        **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1], max_length=1024)
+        translated_tokens = model.generate(
+            **inputs, forced_bos_token_id=tokenizer.encode(target_lang_code)[1], max_length=1024)
 
-    result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
-    print(f"before: {result}")
-    result = format_text(result)
-    print(result)
-    print("translation time takes:---> %s seconds ---" % (time.time() - start_time))
-    return result
+        result = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+        print(f"before: {result}")
+        result = format_text(result)
+        print(result)
+        print("translation time takes:---> %s seconds ---" % (time.time() - start_time))
+        return result
+    else:
+        start_time = time.time()
+        target = language_google[target_language]
+        translated_summary = GoogleTranslator(source='auto', target=target.lower()).translate(article)
+        print(translated_summary)
+        print("translation time takes:---> %s seconds ---" % (time.time() - start_time))
+        return translated_summary
 
 
 def set_target_language(target_lang):
     global target_lang_code
+    global target_language
+    target_language = target_lang
     target_lang_code = languages[target_lang]
 
 
@@ -413,13 +494,17 @@ def change_summary_type(type):
     global summary_type
     summary_type = type
 
+def change_engine(engine):
+    global translation_engine
+    translation_engine = engine
+
 
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
     gr.Markdown("""# YouTube Summarizer with Llama 3 """)
 
     with gr.Row(equal_height=True) as r0:
         with gr.Column(scale=4) as r0c1:
-            url = gr.Textbox(label='YouTube URL', value="https://youtu.be/bvPDQ4-0LAQ")
+            url = gr.Textbox(label='YouTube URL', value="Enter a youtube video link here")
         with gr.Column(scale=1) as r0c2:
             bttn_clear = gr.ClearButton(interactive=True, variant='stop')
 
@@ -450,7 +535,12 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             value=list(languages.keys())[list(languages.values()).index(target_lang_code)]
         )
         dropdown.change(set_target_language, inputs=dropdown)
-
+        select_engine_dropdown = gr.Dropdown(
+            choices = ['Google Translator','Facebook Translator'],
+            label = 'Select Engine',
+            info = "Use Facebook Engine for a low resourced language like Odia"
+        )
+        select_engine_dropdown.input(fn=None, inputs =select_engine_dropdown)
     with gr.Row() as r4:
         with gr.Column() as r4c1:
             trns_raw = gr.Textbox(label='Transcript', show_copy_button=True)
