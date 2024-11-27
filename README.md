@@ -38,7 +38,7 @@ Before you begin, ensure you have the following installed:
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/motolomygolda/MultiLingual-YouTube-Summarizer-using-LLAMA3.git
+    git clone https://github.com/kidusabe1/Multilingual-Youtube-Video-Summarizer
     cd MultiLingual-YouTube-Summarizer-using-LLAMA3
     ```
 
